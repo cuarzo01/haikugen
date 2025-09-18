@@ -113,6 +113,9 @@
             transition: all 0.2s;
             position: relative;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .poem-word:active {
@@ -193,6 +196,7 @@
             perspective: 1000px;
             margin: 10px 0;
             cursor: grab;
+            touch-action: none; /* Importante para dispositivos táctiles */
         }
 
         #cube-container.rotating {
@@ -230,6 +234,8 @@
             cursor: grab;
             user-select: none;
             transition: all 0.3s;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
         }
 
         .word-cell:active {
@@ -846,10 +852,167 @@
             }
         }
 
-        // Event Listeners
+        // Manejadores de eventos para touch
+        function handleTouchStart(e) {
+            if (e.target.classList.contains('word-cell')) {
+                e.preventDefault();
+                isTouching = true;
+                isDraggingFromPoem = false;
+                draggedElement = e.target;
+                draggedElement.classList.add('dragging');
+                
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                lastX = startX;
+                lastY = startY;
+            } else if (e.target.classList.contains('poem-word')) {
+                e.preventDefault();
+                isTouching = true;
+                isDraggingFromPoem = true;
+                draggedElement = e.target;
+                draggedElement.classList.add('dragging');
+                
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                lastX = startX;
+                lastY = startY;
+                
+                // Mostrar zona de eliminación
+                deleteZone.classList.add('visible');
+            } else {
+                // Iniciar rotación del cubo en dispositivos táctiles
+                isTouching = true;
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+                lastX = startX;
+                lastY = startY;
+            }
+        }
+
+        function handleTouchMove(e) {
+            if (isTouching) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                
+                if (draggedElement) {
+                    lastX = touch.clientX;
+                    lastY = touch.clientY;
+                    
+                    // Comprobar si estamos sobre la zona de eliminación
+                    const deleteZoneRect = deleteZone.getBoundingClientRect();
+                    const isOverDeleteZone = (
+                        lastX >= deleteZoneRect.left &&
+                        lastX <= deleteZoneRect.right &&
+                        lastY >= deleteZoneRect.top &&
+                        lastY <= deleteZoneRect.bottom
+                    );
+                    
+                    if (isOverDeleteZone && isDraggingFromPoem) {
+                        draggedElement.classList.add('delete-hint');
+                        hideDropIndicator();
+                    } else {
+                        draggedElement.classList.remove('delete-hint');
+                        // Encontrar posición de colocación en dispositivos táctiles
+                        if (isDraggingFromPoem) {
+                            dropPosition = findDropPosition(lastX, lastY);
+                        }
+                    }
+                } else {
+                    // Rotar el cubo en dispositivos táctiles
+                    const deltaX = touch.clientX - startX;
+                    const deltaY = touch.clientY - startY;
+                    
+                    rotationY += deltaX * 0.5;
+                    rotationX += deltaY * 0.5;
+                    
+                    updateCubeRotation();
+                    
+                    startX = touch.clientX;
+                    startY = touch.clientY;
+                }
+            }
+        }
+
+        function handleTouchEnd(e) {
+            if (isTouching) {
+                isTouching = false;
+                
+                if (draggedElement) {
+                    draggedElement.classList.remove('dragging');
+                    deleteZone.classList.remove('visible');
+                    hideDropIndicator();
+                    
+                    if (isDraggingFromPoem) {
+                        // Comprobar si estamos sobre la zona de eliminación
+                        const deleteZoneRect = deleteZone.getBoundingClientRect();
+                        const isOverDeleteZone = (
+                            lastX >= deleteZoneRect.left &&
+                            lastX <= deleteZoneRect.right &&
+                            lastY >= deleteZoneRect.top &&
+                            lastY <= deleteZoneRect.bottom
+                        );
+                        
+                        if (isOverDeleteZone) {
+                            // Eliminar la palabra
+                            draggedElement.remove();
+                            
+                            // Si no quedan palabras, mostrar mensaje por defecto
+                            if (poemDisplay.querySelectorAll('.poem-word').length === 0) {
+                                poemDisplay.innerHTML = '<p>Arrastre palabras aquí para crear su haiku</p>';
+                                poemDisplay.classList.remove('expanded');
+                            }
+                        } else if (dropPosition !== null) {
+                            // Reordenar palabras (mover a nueva posición)
+                            const words = Array.from(poemDisplay.querySelectorAll('.poem-word'));
+                            const currentIndex = words.indexOf(draggedElement);
+                            
+                            // Solo reorganizar si la posición cambió
+                            if (currentIndex !== dropPosition && currentIndex !== dropPosition - 1) {
+                                // Remover el elemento de su posición actual
+                                draggedElement.remove();
+                                
+                                // Insertar en la nueva posición
+                                const targetWords = poemDisplay.querySelectorAll('.poem-word');
+                                if (dropPosition >= targetWords.length) {
+                                    poemDisplay.appendChild(draggedElement);
+                                } else {
+                                    poemDisplay.insertBefore(draggedElement, targetWords[dropPosition]);
+                                }
+                            }
+                        }
+                        
+                        draggedElement.classList.remove('delete-hint');
+                    } else {
+                        // Arrastrando desde el cubo en dispositivo táctil
+                        const endTouch = document.elementFromPoint(lastX, lastY);
+                        
+                        if (endTouch === poemDisplay || poemDisplay.contains(endTouch)) {
+                            const originalFace = draggedElement.getAttribute('data-original-face');
+                            const position = findDropPosition(lastX, lastY);
+                            addWordToPoem(draggedElement.textContent, originalFace, position);
+                        } else if (endTouch && endTouch.classList.contains('word-cell') && endTouch !== draggedElement) {
+                            swapCells(draggedElement, endTouch);
+                        }
+                    }
+                    
+                    draggedElement = null;
+                    isDraggingFromPoem = false;
+                }
+            }
+        }
+
+        // Event Listeners para mouse y touch
         document.addEventListener('mousedown', handleMouseDown);
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
+        
+        // Event Listeners para dispositivos táctiles
+        document.addEventListener('touchstart', handleTouchStart, { passive: false });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        document.addEventListener('touchend', handleTouchEnd, { passive: false });
 
         // Prevenir que el menú contextual aparezca al hacer clic derecho
         cubeContainer.addEventListener('contextmenu', (e) => e.preventDefault());
